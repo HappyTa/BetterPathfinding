@@ -12,11 +12,11 @@ namespace BetterPathfinding
 	{
 		private struct PathFinderNodeFast
 		{
-			public int knownCost;
+			public float knownCost;
 #if PATHMAX
 			public int originalHeuristicCost;
 #endif
-			public int heuristicCost;
+			public float heuristicCost;
 
 			public short perceivedPathCost;
 
@@ -61,22 +61,22 @@ namespace BetterPathfinding
 
 		internal struct CostNode
 		{
-			public CostNode(int index, int cost)
+			public CostNode(int index, double cost)
 			{
 				gridIndex = index;
 				totalCostEstimate = cost;
 			}
 
-			public readonly int totalCostEstimate;
-
 			public readonly int gridIndex;
+
+			public readonly double totalCostEstimate;
 		}
 
 		public struct PawnPathCostSettings
 		{
-			public int moveTicksCardinal;
+			public float moveTicksCardinal;
 
-			public int moveTicksDiagonal;
+			public float moveTicksDiagonal;
 
 			public ByteGrid avoidGrid;
 
@@ -97,13 +97,17 @@ namespace BetterPathfinding
 
 		private readonly int mapSizeZ;
 
-		private int[] pathGridDirect;
+		//private int[] pathGrid;
+
+		private PathGrid pathGrid;
+
+		private PathingContext pathingContext;
 
 		private Building[] edificeGrid;
 
-		private int moveTicksCardinal;
+		private float moveTicksCardinal;
 
-		private int moveTicksDiagonal;
+		private float moveTicksDiagonal;
 
 		private int curIndex;
 
@@ -115,9 +119,9 @@ namespace BetterPathfinding
 
 		private ushort neighZ;
 
-		private int neighCostThroughCur;
+		private float neighCostThroughCur;
 
-		private int h;
+		private float h;
 
 		private int closedCellCount;
 
@@ -189,15 +193,14 @@ namespace BetterPathfinding
 		public NewPathFinder(Map map)
 		{
 			this.map = map;
-			var mapSizePowTwo = map.info.PowerOfTwoOverMapSize;
-			var gridSizeX = (ushort)mapSizePowTwo;
-			var gridSizeZ = (ushort)mapSizePowTwo;
+			//var mapSizePowTwo = map.info.PowerOfTwoOverMapSize;
+			//var gridSizeX = (ushort)mapSizePowTwo;
+			//var gridSizeZ = (ushort)mapSizePowTwo;
 			mapSizeX = map.Size.x;
 			mapSizeZ = map.Size.z;
-			calcGrid = new PathFinderNodeFast[gridSizeX * gridSizeZ];
-			openList = new BpmxFastPriortyQueue(new PathFinderNodeFastCostComparer(calcGrid), gridSizeX * gridSizeZ);
+			calcGrid = new PathFinderNodeFast[mapSizeX * mapSizeZ];
+			openList = new BpmxFastPriortyQueue(new PathFinderNodeFastCostComparer(calcGrid), mapSizeX * mapSizeZ);
 		}
-
 
 
 		internal enum HeuristicMode
@@ -206,7 +209,6 @@ namespace BetterPathfinding
 			AdmissableOctile,
 			Better
 		}
-
 
 		//Wrapper function to run extra testing/logging code.
 		public PawnPath FindPath(IntVec3 start, LocalTargetInfo dest, TraverseParms traverseParms, PathEndMode peMode = PathEndMode.OnCell)
@@ -363,7 +365,7 @@ namespace BetterPathfinding
                         return false;
                     }
                 }
-				map.regionAndRoomUpdater.RebuildDirtyRegionsAndRooms();
+				map.regionAndRoomUpdater.TryRebuildDirtyRegionsAndRooms();
 			}
 			else if (dest.HasThing && dest.Thing.Map != this.map)
 			{
@@ -381,10 +383,10 @@ namespace BetterPathfinding
 			//The initialization is largely unchanged from Core, aside from coding style in some spots
 #region initialization
 			if (DebugSettings.pathThroughWalls) {
-				traverseParms.mode = TraverseMode.PassAnything;
+				traverseParms.mode = TraverseMode.PassAllDestroyableThingsNotWater;
 			}
 			Pawn pawn = traverseParms.pawn;
-			bool canPassAnything = traverseParms.mode == TraverseMode.PassAnything;
+			bool canPassAnything = traverseParms.mode == TraverseMode.PassAllDestroyableThingsNotWater;
 
 			if (!ValidateFindPathParameters(pawn, start, dest, traverseParms, peMode, canPassAnything))
 			{
@@ -415,7 +417,8 @@ namespace BetterPathfinding
 				Log.Warning("Pathfinding destination not in region, must fall back to vanilla!");
 			}
 			destinationIsOneCell = (destinationRect.Width == 1 && destinationRect.Height == 1);
-			this.pathGridDirect = this.map.pathGrid.pathGrid;
+			pathingContext = map.pathing.For(traverseParms);
+			this.pathGrid = this.pathingContext.pathGrid;
 			this.edificeGrid = this.map.edificeGrid.InnerArray;
 			statusOpenValue += 2;
 			statusClosedValue += 2;
@@ -545,16 +548,16 @@ namespace BetterPathfinding
                         switch (i)
                         {
                             case 4: //Northeast
-                                if (!pathGridDirect.WalkableExtraFast(curIndex - mapSizeX) || !pathGridDirect.WalkableExtraFast(curIndex +1)) { continue; }
+                                if (!pathGrid.WalkableFast(curIndex - mapSizeX) || !pathGrid.WalkableFast(curIndex +1)) { continue; }
                                 break;
                             case 5: //Southeast
-								if (!pathGridDirect.WalkableExtraFast(curIndex + mapSizeX) || !pathGridDirect.WalkableExtraFast(curIndex + 1)) { continue; }
+								if (!pathGrid.WalkableFast(curIndex + mapSizeX) || !pathGrid.WalkableFast(curIndex + 1)) { continue; }
                                 break;
                             case 6: //Southwest
-								if (!pathGridDirect.WalkableExtraFast(curIndex + mapSizeX) || !pathGridDirect.WalkableExtraFast(curIndex - 1)) { continue; }
+								if (!pathGrid.WalkableFast(curIndex + mapSizeX) || !pathGrid.WalkableFast(curIndex - 1)) { continue; }
                                 break;
                             case 7: //Northwest
-								if (!pathGridDirect.WalkableExtraFast(curIndex - mapSizeX) || !pathGridDirect.WalkableExtraFast(curIndex - 1)) { continue; }
+								if (!pathGrid.WalkableFast(curIndex - mapSizeX) || !pathGrid.WalkableFast(curIndex - 1)) { continue; }
                                 break;
                         }
 
@@ -610,10 +613,10 @@ namespace BetterPathfinding
 							neighIndexes[i] = neighIndex;
 						}
 						if (mode == HeuristicMode.Better && (calcGrid[neighIndex].status == statusOpenValue && 
-							Math.Max(i > 3 ? (int)(calcGrid[curIndex].perceivedPathCost * diagonalPerceivedCostWeight) + moveTicksDiagonal : calcGrid[curIndex].perceivedPathCost + moveTicksCardinal, 1) + calcGrid[neighIndex].knownCost < calcGrid[curIndex].knownCost))
+							Math.Max(i > 3 ? (calcGrid[curIndex].perceivedPathCost * diagonalPerceivedCostWeight) + moveTicksDiagonal : calcGrid[curIndex].perceivedPathCost + moveTicksCardinal, 1) + calcGrid[neighIndex].knownCost < calcGrid[curIndex].knownCost))
 						{
 							calcGrid[curIndex].parentIndex = neighIndex;
-							calcGrid[curIndex].knownCost = Math.Max(i > 3 ? (int)(calcGrid[curIndex].perceivedPathCost * diagonalPerceivedCostWeight) + moveTicksDiagonal : calcGrid[curIndex].perceivedPathCost + moveTicksCardinal, 1) + calcGrid[neighIndex].knownCost;
+							calcGrid[curIndex].knownCost = Math.Max(i > 3 ? (calcGrid[curIndex].perceivedPathCost * diagonalPerceivedCostWeight) + moveTicksDiagonal : calcGrid[curIndex].perceivedPathCost + moveTicksCardinal, 1) + calcGrid[neighIndex].knownCost;
 						}
 
 					}
@@ -670,7 +673,7 @@ namespace BetterPathfinding
 #if PATHMAX
 							bool needsUpdate = false;
 #endif
-							int minReopenGain = 0;
+							float minReopenGain = 0f;
 							if (calcGrid[neighIndex].status == statusOpenValue)
 							{
 #if PATHMAX
@@ -717,7 +720,7 @@ namespace BetterPathfinding
 #endif
 						PfProfilerBeginSample("Push Open");
 						openList.PushOrUpdate(new CostNode(neighIndex, calcGrid[curIndex].knownCost
-																		+ (int)Math.Ceiling((calcGrid[neighIndex].heuristicCost + thisDirEdgeCost)  * regionHeuristicWeight.Evaluate(calcGrid[curIndex].knownCost))));
+																		+ Math.Ceiling((double) (calcGrid[neighIndex].heuristicCost + thisDirEdgeCost)  * (double)regionHeuristicWeight.Evaluate(calcGrid[curIndex].knownCost))));
 						debug_totalOpenListCount++;
 						PfProfilerEndSample();
 					}
@@ -739,8 +742,8 @@ namespace BetterPathfinding
 
 	    private short GetTotalPerceivedPathCost(TraverseParms traverseParms, bool canPassAnything, bool shouldCollideWithPawns, Pawn pawn, PawnPathCostSettings pawnPathCosts)
 	    {
-	        int neighCost = 0;
-		    if (!pathGridDirect.WalkableExtraFast(neighIndex))
+	        float neighCost = 0;
+		    if (!pathGrid.WalkableFast(neighIndex))
 		    {
 			    if (!canPassAnything)
 			    {
@@ -753,7 +756,7 @@ namespace BetterPathfinding
 		    }
 		    else
 		    {
-			    neighCost += pathGridDirect[neighIndex];
+			    neighCost += pathGrid.pathGrid[neighIndex];
 		    }
 	        if (shouldCollideWithPawns && PawnUtility.AnyPawnBlockingPathAt(map.cellIndices.IndexToCell(neighIndex), pawn))
 	        {
@@ -807,14 +810,14 @@ namespace BetterPathfinding
 				switch (traverseParms.mode)
 				{
 					case TraverseMode.ByPawn:
-						if (!traverseParms.canBash && building_Door.IsForbiddenToPass(traverseParms.pawn))
+						if (!traverseParms.canBashDoors && building_Door.IsForbiddenToPass(traverseParms.pawn))
 						{
 							return -1;
 						}
 						if (!building_Door.FreePassage)
 						{
 							if (building_Door.PawnCanOpen(traverseParms.pawn)) { return building_Door.TicksToOpenNow; }
-							return !traverseParms.canBash ? -1 : 300;
+							return !traverseParms.canBashDoors ? -1 : 300;
 						}
 						break;
 					case TraverseMode.NoPassClosedDoors:
@@ -886,8 +889,8 @@ namespace BetterPathfinding
 			var newPath = this.map.pawnPathPool.GetEmptyPawnPath();
 			int parentIndex = finalIndex;
 #if DEBUG
-			int prevKnownCost = calcGrid[finalIndex].knownCost;
-			int actualCost = 0;
+			float prevKnownCost = calcGrid[finalIndex].knownCost;
+			float actualCost = 0;
 #endif
 			while (true) {
 				PathFinderNodeFast pathFinderNodeFast = calcGrid[parentIndex];
@@ -904,7 +907,7 @@ namespace BetterPathfinding
 				}
 				parentIndex = newParentIndex;
 			}
-			newPath.SetupFound(calcGrid[curIndex].knownCost);
+			newPath.SetupFound(calcGrid[curIndex].knownCost, false);
 			PfProfilerEndSample();
 			return newPath;
 		}

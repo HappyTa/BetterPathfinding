@@ -16,6 +16,9 @@ namespace BetterPathfinding
 	*******************************/
 	public class PathDataLog : IExposable
 	{
+		private static ScribeSaver saver = Scribe.saver;
+		private static ScribeLoader loader = Scribe.loader;
+
 		public static void SaveFromPathCall(Map map, IntVec3 startVec, LocalTargetInfo dest, TraverseParms traverseParms, PathEndMode peMode)
 		{
 			CellRect destinationRect;
@@ -36,10 +39,11 @@ namespace BetterPathfinding
 				peMode = peMode,
 				tpMode = traverseParms.mode,
 				tpMaxDanger = traverseParms.maxDanger,
-				tpCanBash = traverseParms.canBash,
-				tpMoveCardinal = traverseParms.pawn?.TicksPerMoveCardinal ?? -1,
-				tpMoveDiagonal = traverseParms.pawn?.TicksPerMoveDiagonal ?? -1,
-				pathGrid = map.pathGrid.pathGrid,
+				tpCanBashDoors = traverseParms.canBashDoors,
+				tpCanBashFences = traverseParms.canBashFences,
+				tpMoveCardinal = traverseParms.pawn?.TicksPerMoveCardinal ?? -1f,
+				tpMoveDiagonal = traverseParms.pawn?.TicksPerMoveDiagonal ?? -1f,
+				pathGrid = map.pathing.For(traverseParms).pathGrid.pathGrid,
 				fakeEdificeGrid = new ByteGrid(map),
 				avoidGrid = traverseParms.pawn?.GetAvoidGrid(),
 				allowedArea = traverseParms.pawn?.playerSettings?.AreaRestrictionInPawnCurrentMap
@@ -57,7 +61,7 @@ namespace BetterPathfinding
 						switch (traverseParms.mode)
 						{
 							case TraverseMode.ByPawn:
-								if (!traverseParms.canBash && door.IsForbiddenToPass(traverseParms.pawn)) { value = Edifice_NonTraversableDoor; }
+								if (!traverseParms.canBashDoors && door.IsForbiddenToPass(traverseParms.pawn)) { value = Edifice_NonTraversableDoor; }
 								else if (!door.FreePassage) { value = door.PawnCanOpen(traverseParms.pawn) ? door.TicksToOpenNow : Edifice_NonTraversableDoor; }
 								else
 								{ value = 0; }
@@ -87,7 +91,7 @@ namespace BetterPathfinding
 				SaveGame(savePath);
 				try
 				{
-					Scribe.InitWriting(savePath + ".xml", "PathDataLog");
+					saver.InitSaving(savePath + ".xml", "PathDataLog");
 				}
 				catch (Exception ex)
 				{
@@ -96,7 +100,7 @@ namespace BetterPathfinding
 				}
 				ScribeMetaHeaderUtility.WriteMetaHeader();
 
-				Scribe_Deep.LookDeep(ref dumper, "PathData");
+				Scribe_Deep.Look(ref dumper, "PathData");
 			}
 			catch (Exception ex2)
 			{
@@ -104,7 +108,7 @@ namespace BetterPathfinding
 			}
 			finally
 			{
-				Scribe.FinalizeWriting();
+				saver.FinalizeSaving();
 			}
 
 		}
@@ -115,7 +119,7 @@ namespace BetterPathfinding
 
 			try
 			{
-				Scribe.InitLoading(filename);
+				loader.InitLoading(filename);
 				ScribeMetaHeaderUtility.LoadGameDataHeader(ScribeMetaHeaderUtility.ScribeHeaderMode.Map, false);
 				Scribe.EnterNode("PathData");
 				pathData.ExposeData();
@@ -128,7 +132,7 @@ namespace BetterPathfinding
 			finally
 			{
 				// done loading
-				Scribe.FinalizeLoading();
+				loader.FinalizeLoading();
 				Scribe.mode = LoadSaveMode.Inactive;
 			}
 
@@ -144,7 +148,7 @@ namespace BetterPathfinding
 				{
 					ScribeMetaHeaderUtility.WriteMetaHeader();
 					Game game = Current.Game;
-					Scribe_Deep.LookDeep(ref game, "game");
+					Scribe_Deep.Look(ref game, "game");
 				});
 			}, "Saving Path Data", false, null);
 		}
@@ -161,9 +165,10 @@ namespace BetterPathfinding
 		public PathEndMode peMode;
 		public TraverseMode tpMode;
 		public Danger tpMaxDanger;
-		public bool tpCanBash;
-		public int tpMoveCardinal;
-		public int tpMoveDiagonal;
+		public bool tpCanBashDoors;
+		public bool tpCanBashFences;
+		public float tpMoveCardinal;
+		public float tpMoveDiagonal;
 		public ByteGrid avoidGrid;
 		public Area allowedArea;
 		public int[] pathGrid;
@@ -171,25 +176,25 @@ namespace BetterPathfinding
 
 		public void ExposeData()
 		{
-			Scribe_Values.LookValue(ref mapSize, "mapSize");
-			Scribe_Values.LookValue(ref start, "start");
-			Scribe_Values.LookValue(ref dest, "dest");
-			Scribe_Values.LookValue(ref peMode, "peMode");
-			Scribe_Values.LookValue(ref tpMode, "tpMode");
-			Scribe_Values.LookValue(ref tpMaxDanger, "tpMaxDanger");
-			Scribe_Values.LookValue(ref tpCanBash, "tpCanBash");
-			Scribe_Values.LookValue(ref tpMoveCardinal, "tpMoveCardinal");
-			Scribe_Values.LookValue(ref tpMoveDiagonal, "tpMoveDiagonal");
-			Scribe_Deep.LookDeep(ref fakeEdificeGrid, "fakeEdificeGrid");
-			Scribe_Deep.LookDeep(ref avoidGrid, "avoidGrid");
-			Scribe_Deep.LookDeep(ref allowedArea, "allowedArea");
+			Scribe_Values.Look(ref mapSize, "mapSize");
+			Scribe_Values.Look(ref start, "start");
+			Scribe_Values.Look(ref dest, "dest");
+			Scribe_Values.Look(ref peMode, "peMode");
+			Scribe_Values.Look(ref tpMode, "tpMode");
+			Scribe_Values.Look(ref tpMaxDanger, "tpMaxDanger");
+			Scribe_Values.Look(ref tpCanBashDoors, "tpCanBash");
+			Scribe_Values.Look(ref tpMoveCardinal, "tpMoveCardinal");
+			Scribe_Values.Look(ref tpMoveDiagonal, "tpMoveDiagonal");
+			Scribe_Deep.Look(ref fakeEdificeGrid, "fakeEdificeGrid");
+			Scribe_Deep.Look(ref avoidGrid, "avoidGrid");
+			Scribe_Deep.Look(ref allowedArea, "allowedArea");
 
 			string compressedString = string.Empty;
 			if (Scribe.mode == LoadSaveMode.Saving)
 			{
 				compressedString = IntArrayToCompressedString(pathGrid);
 			}
-			Scribe_Values.LookValue(ref compressedString, "pathGrid");
+			Scribe_Values.Look(ref compressedString, "pathGrid");
 			if (Scribe.mode == LoadSaveMode.LoadingVars)
 			{
 				pathGrid = CompressedStringToIntArray(compressedString);
